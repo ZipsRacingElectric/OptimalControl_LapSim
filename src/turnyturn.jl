@@ -7,7 +7,7 @@ include("modelUtilities.jl")
 # Car Spreadsheet and Parameters!
     # gotta update this to look in github, and not have path that only works for me 🤭
 spreadsheetPath = "C:\\Users\\benmo\\Documents\\GitHub\\Vehicle-Dynamics\\MATLAB\\vehicle_data\\zr25_data.xlsx"
-#zr25 = CarParametersModule.create_car(spreadsheetPath)
+zr25 = CarParametersModule.create_car(spreadsheetPath)
 
     # commented out so it doesn't run every time, theres probably a better way to architect this,..
 
@@ -33,21 +33,39 @@ trackLength = 75
 model = InfiniteModel(optimizer_with_attributes(Ipopt.Optimizer, "print_level" => 0));
 
 # Car parameters, as finite parameters (see above)
-@finite_parameter(model, m == zr25.mass_total)
-@finite_parameter(model, l == zr25.wheelbase)
-#@finite_parameter(model, a == zr25.a)
-#@finite_parameter(model, b == zr25.b)
-@finite_parameter(model, cgDist == zr25.front_mass_distribution)
-@finite_parameter(model, CdA == (1.4+zr25.Cd*zr25.frontal_area))       # 1.6 lmao
-@finite_parameter(model, ClA == zr25.Cl*zr25.frontal_area)
-#@finite_parameter(model, r_wheel == zr25.tire_loaded_radius)
-#@finite_parameter(model, n_gearbox == zr25.gear_ratio)
-@finite_parameter(model, torque_max == 21*zr25.gear_ratio/zr25.tire_loaded_radius)
-@finite_parameter(model, μ == zr25.tire_mu*zr25.tire_mu_correction_factor*.5)
+    @finite_parameter(model, m == zr25.mass_total)
+    @finite_parameter(model, l == zr25.wheelbase)
+    #@finite_parameter(model, a == zr25.a)
+    @finite_parameter(model, b == zr25.b)
+    @finite_parameter(model, tw_f == zr25.track_width_rear)
+    @finite_parameter(model, tw_r == zr25.track_width_rear)
+    @finite_parameter(model, cg_z == zr25.cg_height)
+    @finite_parameter(model, cgDist == zr25.front_mass_distribution)
+    @finite_parameter(model, CdA == (1.4+zr25.Cd*zr25.frontal_area))       # 1.6 lmao
+    @finite_parameter(model, ClA == zr25.Cl*zr25.frontal_area)
+    @finite_parameter(model, r_wheel == zr25.tire_loaded_radius)
+    #@finite_parameter(model, n_gearbox == zr25.gear_ratio)
+    @finite_parameter(model, torque_drive_max == 21*zr25.gear_ratio)                                                    # Nm
+    @finite_parameter(model, torque_brake_max_f == zr25.pad_friction_front*zr25.num_pistons_front*
+                                zr25.disc_radius_front*zr25.piston_radius_front/zr25.mc_diameter_front*
+                                zr25.brake_pedal_motion_ratio*zr25.balance_bar_ratio_front*zr25.max_pedal_force)        # Nm
+    @finite_parameter(model, torque_brake_max_r == zr25.pad_friction_rear*zr25.num_pistons_rear*
+                                zr25.disc_radius_rear*zr25.piston_radius_rear/zr25.mc_diameter_rear*
+                                zr25.brake_pedal_motion_ratio*(1-zr25.balance_bar_ratio_front)*zr25.max_pedal_force)    # Nm
+    @finite_parameter(model, μ == zr25.tire_mu*zr25.tire_mu_correction_factor*.5)
 
-@finite_parameter(model, g == zr25.g)
-@finite_parameter(model, ρ == zr25.air_density)
+    @finite_parameter(model, g == zr25.g)
+    @finite_parameter(model, ρ == zr25.air_density)
 
+    @finite_parameter(model, I₁₁ == 3)
+    @finite_parameter(model, I₂₂ == 3)
+    @finite_parameter(model, I₃₃ == 3)
+
+    # vector of wheel cp positions for yaw Generation
+    # a = l-b
+    rᵢ = [(l-b) (l-b) -b -b;tw_f/2 -tw_f/2 tw_r/2 -tw_r/2;-cg_z -cg_z -cg_z -cg_z]
+    Iₚₒₒ = [I₁₁ 0 0;0 I₂₂ 0;0 0 I₃₃]
+    
 
 # Problem Variables
 @infinite_parameter(model, t in [0, tfGuess], num_supports = 200)
@@ -60,17 +78,23 @@ model = InfiniteModel(optimizer_with_attributes(Ipopt.Optimizer, "print_level" =
     x[1:3], Infinite(t)
     v[1:3], Infinite(t)
     a[1:3], Infinite(t)
-    V, Infinite(t)      # Velocity in TNB Frame
-    #β, Infinite(t)
+    #V, Infinite(t)      # Car Velocity
+    β, Infinite(t)      # Angle from car to velocity vector
     ψ, Infinite(t)      # Angle to TNB Frame
     ω, Infinite(t)      # Yaw rate
 
     F_f[1:3], Infinite(t)
     F_r[1:3], Infinite(t)
 
-    F_car_x, Infinite(t)
-    F_car_y, Infinite(t)
+    Fₜ[1:3,1:4], Infinite(t)
+    
+    -15*π/180 <= α[1:4] <= 15*π/180, Infinite(t)
+    δ[1:4], Infinite(t)
+    0 <= ωₜ[1:4], Infinite(t)
+
     F_car_z, Infinite(t)
+
+    #F_car[1:3], Infinite(t)
 
     # control variables
     -1 <= u[1:2] <= 1, Infinite(t)
@@ -91,29 +115,42 @@ end)
         T = [1;0;0]
         N = [0;1;0]
         B = [0;0;1]
-        κ = 0
+        κ = .05
         τ = 0
 ## 
 # functions, test for control variables. 
-throttleMap(u,v) = 4*(torque_max)u #-.3v
-brakeMap(u) = .5u
+    throttleMap(u,v) = 4*(torque_drive_max/r_wheel)u #-.3v
+    brakeMap(u) = (2*torque_brake_max_f + 2*torque_brake_max_r)u/r_wheel
 
-throttleBrake(u,v) = InfiniteOpt.ifelse(u ≥ 0, throttleMap(u,v), brakeMap(u))
+    throttleBrakeMap(u,v) = InfiniteOpt.ifelse(u ≥ 0, throttleMap(u,v), brakeMap(u))
 
-F_aero(coeff,vel) = .5ρ * coeff * vel^2
-maxTractionAvailable(vel) = (.25*(m*g + .5ClA*ρ*vel^2)*μ) / torque_max
+    steeringMap(u) = u*15 * π/180    # for now, 15° max at tire for 100° max at wheel (ish)
 
-getV(vel,angle) = vel/cos(angle)
+
+    F_aero(coeff,vel) = .5ρ * coeff * vel^2
+    maxTractionAvailable(Fₙ) = (.25*(Fₙ)*μ) / (torque_drive_max/r_wheel)
+    shittyTires(sa) = -20((sa*180/π)-10)^2 + 2000
+
+    crossProductMatrix(pp) = [0 -pp[3] pp[2];pp[3] 0 -pp[1];-pp[2] pp[1] 0]
+    
 
 # Rotation matrix jawns- might be easier in axis angle formulation??
-#rotate_z(θ_z) = [cos(θ_z), -sin(θ_z), 0; sin(θ_z), cos(θ_z), 0; 0, 0, 1]
-#rotate_y(θ_y) = [cos(θ_y), 0, sin(θ_y); 0, 1, 0; -sin(θ_y), 0, cos(θ_y)]
-#rotate_x(θ_x) = [1, 0, 0; 0, cos(θ_x), -sin(θ_x); 0, sin(θ_x), cos(θ_x)]
+    rotate_z(θ_z) = [cos(θ_z) -sin(θ_z) 0; sin(θ_z) cos(θ_z) 0; 0 0 1]
+    rotate_y(θ_y) = [cos(θ_y) 0 sin(θ_y); 0 1 0; -sin(θ_y) 0 cos(θ_y)]
+    rotate_x(θ_x) = [1 0 0; 0 cos(θ_x) -sin(θ_x); 0 sin(θ_x) cos(θ_x)]
+    rotate_z_2d(θ_z) = [cos(θ_z) -sin(θ_z); sin(θ_z) cos(θ_z)]
 
-#rotate(θ_x,θ_y,θ_z) = rotate_z(θ_z) * rotate_y(θ_y) * rotate_x(θ_x)
+    rotate(θ_x,θ_y,θ_z) = rotate_z(θ_z) * rotate_y(θ_y) * rotate_x(θ_x)
 
-#@register(model,getV(vel))
-
+    # Car Velocity from velocity components
+        V = @expression(model, sum(v[i]^2 for i=1:2)^.5)
+    
+    # Forces and Yaw Moment on car
+    F_car = @expression(model, rotate_z(ψ)*(Fₜ[:,1]+Fₜ[:,2]+Fₜ[:,3]+Fₜ[:,4] ))
+    M_car = @expression(model, crossProductMatrix(rᵢ[:,1])*Fₜ[:,1]+
+                                crossProductMatrix(rᵢ[:,2])*Fₜ[:,2]+
+                                crossProductMatrix(rᵢ[:,3])*Fₜ[:,3]+
+                                crossProductMatrix(rᵢ[:,4])*Fₜ[:,4])
 ## Objective Function! minimize final time
 @objective(model,Min,tf)
 
@@ -122,7 +159,11 @@ getV(vel,angle) = vel/cos(angle)
     @constraint(model, [i = 1:3], v[i](0) == v0[i])
     @constraint(model, s(0) == s0)
     @constraint(model, ψ(0) == 0)
+    @constraint(model, β(0) == 0)
     @constraint(model, ω(0) == 0)
+    @constraint(model, F_f[3](0) == cgDist*m*g)
+    @constraint(model, F_r[3](0) == (1-cgDist)*m*g)
+    
     # Make it go! s at final time is at the end of track (s(t=tf) = s_f)
     @constraint(model, s(tfGuess) == trackLength)
 
@@ -131,38 +172,57 @@ getV(vel,angle) = vel/cos(angle)
             # also will need a basis for normal force, don't want to un-generalize it and say it's always
             # in the binormal direction. This would make it more sine-cosiney, should probably look more
             # into rotations
-    @constraint(model, m*(∂(v[1], t) - κ*v[1]v[2]               ) == tf * (throttleBrake(u[1], V) - F_aero(CdA,V) ) * cos(ψ)) # T
-    @constraint(model, m*(κ*v[1]^2   + ∂(v[2], t)  - τ*v[1]*v[3]) == tf * (throttleBrake(u[1], V) - F_aero(CdA,V) ) * sin(ψ)) # N
+    @constraint(model, m*(∂(v[1], t) - κ*v[1]v[2]               ) == tf * (throttleBrakeMap(u[1], V) - F_aero(CdA,V) ) * cos(ψ)) # T
+    @constraint(model, m*(κ*v[1]^2   + ∂(v[2], t)  - τ*v[1]*v[3]) == tf * (throttleBrakeMap(u[1], V) - F_aero(CdA,V) ) * sin(ψ)) # N
     @constraint(model, m*(             τ*v[1]*v[2] + ∂(v[3], t) ) == tf * ( F_car_z  - F_aero(ClA, V) - m*g  ))
 
 
     # acceleration: these are not reeeallly used for the dynamics, but more to keep track of them for after
     # the fact during analysis. Might use them for weight transfer though, LLT*ay, for instance
     @constraint(model, [i = 1:3], ∂(v[i], t) == tf * a[i])
+    
     # For now, much simplified velocity & yaw control 
-    @constraint(model, ∂(ω, t) == tf * u[2]/1000)
+    @constraint(model, Iₚₒₒ*[0;0;∂(ω, t)] .== tf * M_car)
+    
 
     # update position state variables in TNB Ref Frame
         # only update x2,x3. x1 is always zero, as the TNB frame moves along the track
         # with the car, for now
-    @constraint(model, [i = 2:3], ∂(x[i], t) == tf * v[i])
+        @constraint(model, [i = 2:3], ∂(x[i], t) == tf * v[i])
     
-    @constraint(model, ∂(ψ, t) == tf * ω)
+    #@constraint(model, ∂(ψ, t) == tf * ω)
+    @constraint(model, ∂(β, t) == tf * ω)
+    @constraint(model, ∂(ψ, t) == ω + v[1]*κ)
 
     # TNB Movement: update s by v1
     @constraint(model, ∂(s,t) == tf * v[1])
 
-    # Car Velocity from velocity components
-        # super weird, does not work with a norm, so using v1/cosψ
-        # will need to update for a more complete rotation later...
-    @constraint(model,V == getV(v[1],ψ))
+
 
     # Car forces
-        # meant to simplify the TNB equations for readability, hopefully not adding too much solve time
-        # in theory, could also apply control here, and coord system transformations
-    #@constraint(model, F_car_x == throttleBrake(u[1], V)*(F_f[1]+ F_r[1]))
-    #@constraint(model, F_car_y == )
-    @constraint(model, F_car_z == cgDist*F_f[3] + (1-cgDist)*F_r[3])
+        # transform tire forces in car frame to TNB Frame
+
+        @constraint(model, F_car_z == F_f[3] + F_r[3])
+        
+
+        # for now, enforce static weight distribution. Eventually handle with lat, long x-fer
+        @constraint(model, F_f[3] == cgDist*F_car_z)
+
+    # Tire Forces
+        # apply control vectors to tires in tire coord. frames, translate to car frame
+    @constraint(model, [i=1:4], Fₜ[1:2,i] .== rotate_z_2d(δ[i]) * [.25*throttleBrakeMap(u[1], V),
+                                                                shittyTires(α[i])])
+
+    # Tire Model Stuff
+        # steering
+        @constraint(model, [i=1:2], δ[i] == steeringMap(u[2]))
+        @constraint(model, [i=3:4], δ[i] == 0)        # no rear wheel deflection (for now)
+        # Slip angles
+        @constraint(model, [i=1:4], α[i] == β - δ[i])
+        # Slip Ratios
+
+    
+
 
 # Enforce Track!
     # limit track width!
@@ -170,11 +230,13 @@ getV(vel,angle) = vel/cos(angle)
 
     # car stays above track, but can lift off. 
     @constraint(model, x[3] >= 0)
+    # need to enforce something similar for normal force vectors
 
 # try to enforce some control vector continuity stuff
     # doesn't converge without this guy, which makes sense sorta
     @constraint(model, u[1](0) >= 0)
-    @constraint(model, u[2] == 0)
+    #@constraint(model, u[2] == 0)
+    @constraint(model, u[2](0) == 0)
     
     # these guys, eh, seems right. v3=0 for now, should be faster?
     @constraint(model, v[1] >= 0)
@@ -182,7 +244,7 @@ getV(vel,angle) = vel/cos(angle)
 
 
 # traction constraint, pls work!!!!
-    @constraint(model, [i = 1:2], u[i] <= maxTractionAvailable(V))
+    @constraint(model, [i = 1:2], u[i] <= maxTractionAvailable(F_car_z))
         # it worky! sorta, max traction not really well related to yaw rate..
 
 # linalg go brrrrrrr
@@ -205,8 +267,10 @@ lapRunData = (
     v = value.(v),
     a = value.(a),
     V = value.(V),
+    β = value.(β),
     ψ = value.(ψ),
     ω = value.(ω),
+    ω_tnb = value.(κ) .* value.(v[1]),
     u = value.(u))
 
 ## Results Generation and Output
@@ -216,16 +280,6 @@ lapRunData = (
 
 
     # plots and plotts and plottts 📈
-
-    #scatter(xw[1,:], xw[2,:], label = "Waypoints")
-    #p3 = plot!(x_opt[1], x_opt[2], label = "Trajectory")
-    #xlabel!("x_1")
-    #ylabel!("x_2")
-
     plotTimeHistories(lapRunData)
 
     plotPosition(lapRunData)
-
-
-
-        #(.5*zr25.air_density*zr25.Cd*zr25.frontal_area .* lapRunData.V .^2)

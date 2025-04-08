@@ -30,15 +30,15 @@ function getCenterline(runData,T,N,B,κ,τ)
 end
 
 function plotTimeHistories(runData)
-    n = 4
+    n = 5
     
     p1 = Plots.plot(runData.t, runData.u; ylabel = "Control Input")
     p2 = Plots.plot(runData.t, runData.v; ylabel = "Velocities")
     p3 = Plots.plot(runData.t, runData.V; ylabel = "Speed")
     p4 = Plots.plot(runData.t, runData.a; ylabel = "Acceleration")
-    #p5 = Plots.plot(runData.t, runData.ψ; ylabel = "Angle to TNB, ψ")
+    p5 = Plots.plot(runData.t, runData.ψ; ylabel = "Angle to TNB, ψ")
         
-    display(plot(p1, p2, p3, p4, layout=(n,1)))
+    display(plot(p1, p2, p3, p4, p5, layout=(n,1)))
 end
 
 function plotPosition(runData)
