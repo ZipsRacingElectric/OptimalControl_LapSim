@@ -56,6 +56,8 @@ function plotPosition(runData)
     s = range(0, runData.s[end], length=length(lapRunData.s))
     kappa = runData.κ
     x_track = zeros(length(runData.s), 3)
+    x_left_border = zeros(length(runData.s), 3)
+    x_right_border = zeros(length(runData.s), 3)
     x_car = zeros(length(runData.s), 3)
 
     makeUnitVector(v) = v./norm(v)
@@ -73,16 +75,19 @@ function plotPosition(runData)
         B[i, :] = makeUnitVector(B[i-1, :] + TNB_prime[3, 1:3] * delta_s)
     
         x_track[i, :] = x_track[i-1, :] + delta_s .* T[i, :]
+        x_left_border[i, :] = x_track[i, :] + 2*N[i, :]
+        x_right_border[i, :] = x_track[i, :] - 2*N[i, :]
         x_car[i, :] = x_track[i, :]
     end
     x_car = x_car + lapRunData.x[2] .* N 
     
 
 
-    p1 = Plots.plot(x_track[:,1], x_track[:,2], xlabel = "x",ylabel = "y")
-    plot!(p1,x_car[:,1],x_car[:,2])
+    p1 = Plots.plot(x_track[:,1], x_track[:,2], label = "Centerline", xlabel = "x",ylabel = "y")
+    plot!(p1,x_car[:,1],x_car[:,2],label="Racecar's Path")
+    plot!(p1,x_left_border[:,1],x_left_border[:,2],label="Left Track Border")
+    plot!(p1,x_right_border[:,1],x_right_border[:,2],label="Right Track Border")
 
     display(plot(p1,layout=(1,1)))
-
 
 end
