@@ -2,6 +2,7 @@ using InfiniteOpt, Ipopt, Plots
 include("vehicleParameters/carParametersModule.jl")
 using .CarParametersModule
 include("modelUtilities.jl")
+include("tireJawn.jl")
 
 
 # Car Spreadsheet and Parameters!
@@ -25,6 +26,12 @@ trackLength = 75
     x0 = [0,0,0]
     v0 = [0,0,0]
     s0 = 0
+    
+    # piecewise definition of track:
+        # index of track length segments
+        sᵢ = [0,75]
+        # index of track curvature values
+        κᵢ = [0,.05]
 
 
 
@@ -102,20 +109,21 @@ end)
 
 @variable(model, tf >= 0, start = tfGuess)
 
-# TNB Frame Stuff, attempt 1, straight line
-        #=
-            @parameter_function(model, T == (s) -> [1;0;0])
-            @parameter_function(model, N == (s) -> [0;1;0])
-            @parameter_function(model, B == (s) -> [0;0;1])
+# TNB Frame Stuff, attempt 2, straight line into curve
+#=
+    function get_κ(s₌)
+        # function that takes the current value of s, and compares to s_vec
+        # returns matching index position
 
-            @parameter_function(model, κ == (s) -> 0)
-            @parameter_function(model, τ == (s) -> 0)
-        =#
-        # didn't work, try more basic for now:
+        # non-general implementation for design day in 2 days,
+        # need to be able to extend to arbitrary length vectors!!!
+        return op_ifelse(op_less_than_or_equal_to(s₌, sᵢ[1]), κᵢ[1], κᵢ[2])
+    end
+    =#
         T = [1;0;0]
         N = [0;1;0]
         B = [0;0;1]
-        κ = .05
+        κ = 0 #@expression(model, get_κ(s))
         τ = 0
 ## 
 # functions, test for control variables. 
@@ -127,9 +135,13 @@ end)
     steeringMap(u) = u*15 * π/180    # for now, 15° max at tire for 100° max at wheel (ish)
 
 
-    F_aero(coeff,vel) = .5ρ * coeff * vel^2
+
+    F_aero(coeff,vel) = .5*ρ * coeff * vel^2
+    #F_down = @expression(model, .5ρ*ClA* sum(v[i]^2 for i=1:2) )
+    #F_drag = @expression(model, .5ρ*CdA* sum(v[i]^2 for i=1:2) )
+    
     maxTractionAvailable(Fₙ) = (.25*(Fₙ)*μ) / (torque_drive_max/r_wheel)
-    shittyTires(sa) = -20((sa*180/π)-10)^2 + 2000
+    
 
     crossProductMatrix(pp) = [0 -pp[3] pp[2];pp[3] 0 -pp[1];-pp[2] pp[1] 0]
     
@@ -143,7 +155,8 @@ end)
     rotate(θ_x,θ_y,θ_z) = rotate_z(θ_z) * rotate_y(θ_y) * rotate_x(θ_x)
 
     # Car Velocity from velocity components
-        V = @expression(model, sum(v[i]^2 for i=1:2)^.5)
+        V = @expression(model, sqrt(sum(v[i]^2 for i=1:2)))
+        @constraint(model, V ≥ 0)
     
     # Forces and Yaw Moment on car
     F_car = @expression(model, rotate_z(ψ)*(Fₜ[:,1]+Fₜ[:,2]+Fₜ[:,3]+Fₜ[:,4] ))
@@ -172,9 +185,9 @@ end)
             # also will need a basis for normal force, don't want to un-generalize it and say it's always
             # in the binormal direction. This would make it more sine-cosiney, should probably look more
             # into rotations
-    @constraint(model, m*(∂(v[1], t) - κ*v[1]v[2]               ) == tf * (throttleBrakeMap(u[1], V) - F_aero(CdA,V) ) * cos(ψ)) # T
-    @constraint(model, m*(κ*v[1]^2   + ∂(v[2], t)  - τ*v[1]*v[3]) == tf * (throttleBrakeMap(u[1], V) - F_aero(CdA,V) ) * sin(ψ)) # N
-    @constraint(model, m*(             τ*v[1]*v[2] + ∂(v[3], t) ) == tf * ( F_car_z  - F_aero(ClA, V) - m*g  ))
+    @constraint(model, m*(∂(v[1], t) - κ*v[1]v[2]               ) == tf * ((throttleBrakeMap(u[1],V) - F_aero(CdA,V))*cos(ψ))) # T
+    @constraint(model, m*(κ*v[1]^2   + ∂(v[2], t)  - τ*v[1]*v[3]) == tf * ((throttleBrakeMap(u[1],V) - F_aero(CdA,V))* sin(ψ))) # N
+    @constraint(model, m*(             τ*v[1]*v[2] + ∂(v[3], t) ) == tf * (F_car_z  - F_aero(ClsA,V) - m*g  ))
 
 
     # acceleration: these are not reeeallly used for the dynamics, but more to keep track of them for after
@@ -261,7 +274,7 @@ optimize!(model)
 lapRunData = (
     t = value.(t) * value.(tf),
     s = value.(s),
-    κ = value.(κ) * ones(length(value.(t))),
+    κ = value.(κ), #* ones(length(value.(t))),
     τ = value.(τ) * ones(length(value.(t))),
     x = value.(x),
     v = value.(v),
