@@ -6,7 +6,7 @@ include("modelUtilities.jl")
 
 # Car Spreadsheet and Parameters!
     # gotta update this to look in github, and not have path that only works for me 🤭
-spreadsheetPath = "C:\\Users\\benmo\\Documents\\GitHub\\Vehicle-Dynamics\\MATLAB\\vehicle_data\\zr25_data.xlsx"
+spreadsheetPath = "src\\vehicleParameters\\zr25_data.xlsx"
 zr25 = CarParametersModule.create_car(spreadsheetPath)
 
     # commented out so it doesn't run every time, theres probably a better way to architect this,..
