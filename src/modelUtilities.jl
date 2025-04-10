@@ -83,10 +83,10 @@ function plotPosition(runData)
     
 
 
-    p1 = Plots.plot(x_track[:,1], x_track[:,2], label = "Centerline", xlabel = "x",ylabel = "y")
-    plot!(p1,x_car[:,1],x_car[:,2],label="Racecar's Path")
-    plot!(p1,x_left_border[:,1],x_left_border[:,2],label="Left Track Border")
-    plot!(p1,x_right_border[:,1],x_right_border[:,2],label="Right Track Border")
+    p1 = Plots.plot(x_track[:,1], x_track[:,2], label = "Centerline", xlabel = "X (m)",ylabel = "Y (m)")
+    plot!(p1,x_car[:,1],x_car[:,2],label="Racecar's Path",lw = 3)
+    plot!(p1,x_left_border[:,1],x_left_border[:,2], label = "limit₊", lc=:grey,lw = 1)
+    plot!(p1,x_right_border[:,1],x_right_border[:,2], label = "limit₋", lc=:grey, lw = 1)
 
     display(plot(p1,layout=(1,1)))
 

@@ -2,12 +2,11 @@ using InfiniteOpt, Ipopt, Plots
 include("vehicleParameters/carParametersModule.jl")
 using .CarParametersModule
 include("modelUtilities.jl")
-include("tireJawn.jl")
 
 
 # Car Spreadsheet and Parameters!
     # gotta update this to look in github, and not have path that only works for me 🤭
-spreadsheetPath = "src\\vehicleParameters\\zr25_data.xlsx"
+spreadsheetPath = "vehicleParameters\\zr25_data.xlsx"
 zr25 = CarParametersModule.create_car(spreadsheetPath)
 
     # commented out so it doesn't run every time, theres probably a better way to architect this,..
@@ -26,13 +25,12 @@ trackLength = 75
     x0 = [0,0,0]
     v0 = [0,0,0]
     s0 = 0
-    
-    # piecewise definition of track:
-        # index of track length segments
-        sᵢ = [0,75]
-        # index of track curvature values
-        κᵢ = [0,.05]
 
+    # piecewise definition of track:
+    # index of track length segments
+    sᵢ = [30,trackLength]
+    # index of track curvature values
+    κᵢ = [.005,.05]
 
 
 
@@ -95,19 +93,19 @@ model = InfiniteModel(optimizer_with_attributes(Ipopt.Optimizer, "print_level" =
 
     Fₜ[1:3,1:4], Infinite(t)
     
-    -15*π/180 <= α[1:4] <= 15*π/180, Infinite(t)
+    -15*π/180 ≤ α[1:4] ≤ 15*π/180, Infinite(t)
     δ[1:4], Infinite(t)
-    0 <= ωₜ[1:4], Infinite(t)
+    #0 ≤ ωₜ[1:4], Infinite(t)
 
     F_car_z, Infinite(t)
 
     #F_car[1:3], Infinite(t)
 
     # control variables
-    -1 <= u[1:2] <= 1, Infinite(t)
+    -1 ≤ u[1:2] ≤ 1, Infinite(t)
 end)
 
-@variable(model, tf >= 0, start = tfGuess)
+@variable(model, tf ≥ 0, start = tfGuess)
 
 # TNB Frame Stuff, attempt 2, straight line into curve
 #=
@@ -123,7 +121,8 @@ end)
         T = [1;0;0]
         N = [0;1;0]
         B = [0;0;1]
-        κ = 0 #@expression(model, get_κ(s))
+        #κ = 0
+        κ = InfiniteOpt.ifelse(s ≤ sᵢ[1], κᵢ[1], κᵢ[2])
         τ = 0
 ## 
 # functions, test for control variables. 
@@ -141,7 +140,7 @@ end)
     #F_drag = @expression(model, .5ρ*CdA* sum(v[i]^2 for i=1:2) )
     
     maxTractionAvailable(Fₙ) = (.25*(Fₙ)*μ) / (torque_drive_max/r_wheel)
-    
+    shittyTires(sa) = -20((sa*180/π)-10)^2 + 2000
 
     crossProductMatrix(pp) = [0 -pp[3] pp[2];pp[3] 0 -pp[1];-pp[2] pp[1] 0]
     
@@ -155,8 +154,8 @@ end)
     rotate(θ_x,θ_y,θ_z) = rotate_z(θ_z) * rotate_y(θ_y) * rotate_x(θ_x)
 
     # Car Velocity from velocity components
-        V = @expression(model, sqrt(sum(v[i]^2 for i=1:2)))
-        @constraint(model, V ≥ 0)
+        V = @expression(model, (sum(v[i]^2 for i=1:2))^.5)
+        #@constraint(model, V ≥ 0)
     
     # Forces and Yaw Moment on car
     F_car = @expression(model, rotate_z(ψ)*(Fₜ[:,1]+Fₜ[:,2]+Fₜ[:,3]+Fₜ[:,4] ))
@@ -185,11 +184,17 @@ end)
             # also will need a basis for normal force, don't want to un-generalize it and say it's always
             # in the binormal direction. This would make it more sine-cosiney, should probably look more
             # into rotations
-    @constraint(model, m*(∂(v[1], t) - κ*v[1]v[2]               ) == tf * ((throttleBrakeMap(u[1],V) - F_aero(CdA,V))*cos(ψ))) # T
-    @constraint(model, m*(κ*v[1]^2   + ∂(v[2], t)  - τ*v[1]*v[3]) == tf * ((throttleBrakeMap(u[1],V) - F_aero(CdA,V))* sin(ψ))) # N
-    @constraint(model, m*(             τ*v[1]*v[2] + ∂(v[3], t) ) == tf * (F_car_z  - F_aero(ClsA,V) - m*g  ))
-
-
+##=
+    @constraint(model, m*(∂(v[1], t) - κ*v[1]v[2]               ) == tf * ((throttleBrakeMap(u[1], V) - F_aero(CdA,V) ) * cos(ψ))) # T
+    @constraint(model, m*(κ*v[1]^2   + ∂(v[2], t)  - τ*v[1]*v[3]) == tf * ((throttleBrakeMap(u[1], V) - F_aero(CdA,V) ) * sin(ψ))) # N
+    @constraint(model, m*(             τ*v[1]*v[2] + ∂(v[3], t) ) == tf * ( F_car_z  - F_aero(ClA, V) - m*g  ))
+##=#
+#=
+    @constraint(model, m*(∂(v[1], t) - κ*v[1]v[2]               ) == tf * (F_car[1])) # T
+    @constraint(model, m*(κ*v[1]^2   + ∂(v[2], t)  - τ*v[1]*v[3]) == tf * (F_car[2])) # N
+    @constraint(model, m*(             τ*v[1]*v[2] + ∂(v[3], t) ) == tf * ( F_car_z  - F_aero(ClA, V) - m*g  ))
+    =#
+    
     # acceleration: these are not reeeallly used for the dynamics, but more to keep track of them for after
     # the fact during analysis. Might use them for weight transfer though, LLT*ay, for instance
     @constraint(model, [i = 1:3], ∂(v[i], t) == tf * a[i])
@@ -225,6 +230,7 @@ end)
         # apply control vectors to tires in tire coord. frames, translate to car frame
     @constraint(model, [i=1:4], Fₜ[1:2,i] .== rotate_z_2d(δ[i]) * [.25*throttleBrakeMap(u[1], V),
                                                                 shittyTires(α[i])])
+    #@constraint(model, [i=1:4], sum(Fₜ[3,i]) == F_aero(ClA,V) + m*g)                                                      
 
     # Tire Model Stuff
         # steering
@@ -274,7 +280,7 @@ optimize!(model)
 lapRunData = (
     t = value.(t) * value.(tf),
     s = value.(s),
-    κ = value.(κ), #* ones(length(value.(t))),
+    κ = value.(κ),
     τ = value.(τ) * ones(length(value.(t))),
     x = value.(x),
     v = value.(v),
@@ -283,7 +289,7 @@ lapRunData = (
     β = value.(β),
     ψ = value.(ψ),
     ω = value.(ω),
-    ω_tnb = value.(κ) .* value.(v[1]),
+    #ω_tnb = value.(κ) .* value.(v[1]),
     u = value.(u))
 
 ## Results Generation and Output
