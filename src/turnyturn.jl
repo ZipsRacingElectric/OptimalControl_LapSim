@@ -28,9 +28,9 @@ trackLength = 75
 
     # piecewise definition of track:
     # index of track length segments
-    sᵢ = [30,trackLength]
+    sᵢ = [30, trackLength]
     # index of track curvature values
-    κᵢ = [.005,.05]
+    κᵢ = [0.005, 0.05]
 
 
 
@@ -73,7 +73,7 @@ model = InfiniteModel(optimizer_with_attributes(Ipopt.Optimizer, "print_level" =
     
 
 # Problem Variables
-@infinite_parameter(model, t in [0, tfGuess], num_supports = 200)
+@infinite_parameter(model, t in [0, tfGuess], num_supports = 100)
 
 
 @variables(model, begin
@@ -175,7 +175,7 @@ end)
     @constraint(model, ω(0) == 0)
     @constraint(model, F_f[3](0) == cgDist*m*g)
     @constraint(model, F_r[3](0) == (1-cgDist)*m*g)
-    
+
     # Make it go! s at final time is at the end of track (s(t=tf) = s_f)
     @constraint(model, s(tfGuess) == trackLength)
 

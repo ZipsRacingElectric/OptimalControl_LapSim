@@ -30,21 +30,37 @@ function getCenterline(runData,T,N,B,κ,τ)
 end
 
 function plotTimeHistories(runData)
-    n = 5
+    n = 3
+    v_mat = hcat(runData.v...,runData.V)  # now columns are inputs
     
-    p1 = Plots.plot(runData.t, runData.u; ylabel = "Control Input")
-    p2 = Plots.plot(runData.t, runData.v; ylabel = "Velocities")
+    p1 = Plots.plot(runData.t, runData.u; ylabel = "Control Input",
+                    label = ["Accelerator/Brake Input" "Steering Wheel Input"],
+                    legend = :bottomright,
+                    guidefont = font(7,"Computer Modern"),
+                    title = "Control Inputs and State Vector Traces",
+                    titlefont = font(12,"Computer Modern"))
+    p2 = Plots.plot(runData.t, v_mat; ylabel = "Velocity (m\\/s)",
+                    label = ["v₁" "v₂" "v₃" "V" ],
+                    guidefont = font(7,"Computer Modern"))
+    
     p3 = Plots.plot(runData.t, runData.V; ylabel = "Speed")
-    p4 = Plots.plot(runData.t, runData.a; ylabel = "Acceleration")
+    p4 = Plots.plot(runData.t, runData.a; ylabel = "Acceleration (m\\/s^{2})", xlabel = "Time (s)",
+                    label = ["a₁" "a₂" "a₃" "V" ],
+                    legend = :bottomright,
+                    guidefont = font(7,"Computer Modern"))
     p5 = Plots.plot(runData.t, runData.ψ; ylabel = "Angle to TNB, ψ")
         
-    display(plot(p1, p2, p3, p4, p5, layout=(n,1)))
+    plotJawn = plot(p1,p2,p4, layout=(n,1))
+                #guidefont = font(9,"Computer Modern")))
+    display(plotJawn)
+
+    return plotJawn 
 end
 
 function plotPosition(runData)
-    # Still needs TNB stuff, shouldnt be too hard
+    # Plots plan view of car along path
 
-    # Initialize the Frenet-Serret frame
+    # Initialize the Frenet-Serret frame 
     T = zeros(length(runData.s), 3)
     N = zeros(length(runData.s), 3)
     B = zeros(length(runData.s), 3)
@@ -81,13 +97,20 @@ function plotPosition(runData)
     end
     x_car = x_car + lapRunData.x[2] .* N 
     
+    gr()
 
-
-    p1 = Plots.plot(x_track[:,1], x_track[:,2], label = "Centerline", xlabel = "X (m)",ylabel = "Y (m)")
+    p1 = Plots.plot(x_track[:,1], x_track[:,2], label = "Centerline",
+                    xlabel = "X (m)",
+                    ylabel = "Y (m)",
+                    title = "Vehicle Path on Track",
+                    guidefont = font(9,"Computer Modern"),
+                    titlefont = font(12,"Computer Modern"))
     plot!(p1,x_car[:,1],x_car[:,2],label="Racecar's Path",lw = 3)
     plot!(p1,x_left_border[:,1],x_left_border[:,2], label = "limit₊", lc=:grey,lw = 1)
     plot!(p1,x_right_border[:,1],x_right_border[:,2], label = "limit₋", lc=:grey, lw = 1)
 
     display(plot(p1,layout=(1,1)))
+
+    return p1
 
 end
