@@ -2,101 +2,111 @@ module CarParametersModule
 
 using XLSX, DataFrames
 
-export InitialCarParameters, carParameters, create_car, update_parameters, reset_parameters, calculate_dragforce, calculate_downforce
+export InitialCarParameters, carParameters, create_car, update_parameters, reset_parameters, get_used_parameters
 
 # Immutable struct for storing the original parameters (no touchy!)
 # Must be in Spreadsheet
 Base.@kwdef struct InitialCarParameters
-    wheelbase::Float64
-    track_width_front::Float64
-    track_width_rear::Float64
+    #Dimensions
+    wheelbase::Float64 = -1                                             #m
+    track_width_front::Float64 = -1                                                   #m
+    track_width_rear::Float64 = -1                                                    #m
 
-    vehicle_mass::Float64
-    driver_mass::Float64
-    corner_mass_front::Float64
-    corner_mass_rear::Float64
-    front_mass_distribution::Float64
-    cg_height::Float64
-    yaw_polar_inertia::Float64
-    roll_polar_inertia::Float64
-    pitch_polar_inertia::Float64
-
-    tire_loaded_radius::Float64
-    tire_mu::Float64
-    tire_mu_correction_factor::Float64
-    tire_stiffness::Float64
-    tire_width::Float64
-
-    gear_ratio::Float64
-    j_m::Float64
-    J_s1::Float64
-    J_1::Float64
-    J_2::Float64
-    J_s2::Float64
-    J_w::Float64
-
-    static_toe_front::Float64
-    static_toe_rear::Float64
-    static_camber_front::Float64
-    static_camber_rear::Float64
-    steering_ratio::Float64
-    ackermann_percentage::Float64
-    steering_arm_length::Float64
-    steering_rack_length::Float64
-    tie_rod_length_front::Float64
-    steering_rack_to_axis_distance::Float64
-    steering_pinion_radius::Float64
-    roll_center_front::Float64
-    roll_center_rear::Float64
-
-    frontal_area::Float64
-    Cd::Float64
-    Cl::Float64
-    center_of_pressure_distribution::Float64
-    velocity_skidpad::Float64
-    cla_at_skidpad::Float64
-    cop_at_skidpad::Float64
-    velocity_max::Float64
-    cla_at_max_velocity::Float64
-    cop_at_max_velocity::Float64
-
-    damper_travel::Float64
-    spring_rate_front::Float64
-    spring_rate_rear::Float64
-    bar_spring_rate_front::Float64
-    bar_spring_rate_rear::Float64
-    motion_ratio_front::Float64
-    motion_ratio_rear::Float64
-    bar_motion_ratio_front::Float64
-    bar_motion_ratio_rear::Float64
-    ride_frequency_front::Float64
-    ride_frequency_rear::Float64
-
-    toe_deflection_rear::Float64
-
-    piston_radius_front::Float64
-    piston_radius_rear::Float64
-    num_pistons_front::Float64
-    num_pistons_rear::Float64
-    pad_friction_front::Float64
-    pad_friction_rear::Float64
-    max_pedal_force::Float64
-    disc_radius_front::Float64
-    disc_radius_rear::Float64
-    pad_height_front::Float64
-    pad_height_rear::Float64
-    mc_diameter_front::Float64
-    mc_diameter_rear::Float64
-    balance_bar_ratio_front::Float64
-    brake_pedal_motion_ratio::Float64
+    #Mass
+    vehicle_mass::Float64 = -1                                                        #kg
+    driver_mass::Float64 = -1                                                         #kg
+    corner_mass_front::Float64 = -1                                                   #kg, unsprun corner mass. Include half of the control arm masses.
+    corner_mass_rear::Float64 = -1                                                    #kg, unsprun corner mass. Include half of the control arm masses.
+    front_mass_distribution::Float64 = -1                                             #percentage on front axle
+    cg_height::Float64 = -1                                                           #m
+    yaw_polar_inertia::Float64 = -1                                                   #kg * m^2, about the yaw (vertical) axis  of the C.G.
+    roll_polar_inertia::Float64 = -1
+    pitch_polar_inertia::Float64 = -1
 
 
-    
+    #Tires
+    tire_loaded_radius::Float64 = -1                                                  #m
+    gear_ratio::Float64 = -1                                                          #(# input rotations / # output rotations)
+    tire_mu::Float64 = -1                                                             #the hot tire friction from TTC data                           
+    tire_mu_correction_factor::Float64 = -1                                           #this is a correction factor to account for reduced tire-road friction compared to TTC data. Typically 2/3 but should be tuned if raining or cold outside
+    tire_stiffness::Float64 = -1                                                      #N/m
+    tire_width::Float64 = -1                                                          #m
+
+    #Kinematics
+    static_toe_front::Float64 = -1                                                    #degrees (per wheel), + is toe out
+    static_toe_rear::Float64 = -1                                                     #degrees (per wheel), + is toe out
+    static_camber_front::Float64 = -1                                                 #degrees, - is leaning torwards car
+    static_camber_rear::Float64 = -1                                                  #degrees, - is leaning torwards car
+    steering_ratio::Float64 = -1                                                      #ratio, steering wheel angle / ackerman steering angle (aka average of L and R angles)
+    ackermann_percentage::Float64 = -1                                                #percentage
+    steering_arm_length::Float64 = -1                                                 #m, perpendicular length between tire rod point and kingpin axis
+    steering_rack_length::Float64 = -1                                                #m, eye to eye length of steering rack
+    tie_rod_length_front::Float64 = -1                                               #m, perpendicular length between tire rod point and kingpin axis
+    steering_rack_to_axis_distance::Float64 = -1                                      #m, distance between kingpin axis and steering rack, parallel to the longitudinal plane of the vehicle
+    steering_pinion_radius::Float64 = -1                                              #m, radius of the steering rack pinion gear (reference for gear ratio calculation)
+    roll_center_front::Float64 = -1                                                   #m, height of front roll center at static ride height
+    roll_center_rear::Float64 = -1                                                    #m, height of rear roll center at static ride height
+
+    # Gearbox inertias 
+    Jm::Float64 = -1
+    Js1::Float64 = -1
+    J1::Float64 = -1
+    J2::Float64 = -1
+    Js2::Float64 = -1
+    Jw::Float64 = -1
+
+
+    #Aerodyamics
+    frontal_area::Float64 = -1                                                        #m^2
+    Cd::Float64 = -1                                                                  #unitless
+    Cl::Float64 = -1                                                                  #unitless. Certain models may require it to be negative or positive based on implementation
+    center_of_pressure_distribution::Float64 = -1                                     #ratio 0(at rear axle) to 1(at front axle)
+    velocity_skidpad::Float64 = -1                                                    #velocity of skidpad for aero measurement
+    cla_at_skidpad::Float64 = -1                                                      #unitless, + is downforce, ClA at skidpad
+    cop_at_skidpad::Float64 = -1                                                      #ratio 0(at rear axle) to 1(at front axle), Cop at skidpad
+    velocity_max::Float64 = -1                                                       #maximum velocity for aero measurement
+    cla_at_max_velocity::Float64 = -1                                                #unitless, + is downforce,cla at max velocity
+    cop_at_max_velocity::Float64 = -1                                                 #ratio 0(at rear axle) to 1(at front axle), CoP at max velocity
+
+    #Springs and Dampers
+    damper_travel::Float64 = -1                                                       #m, maximum travel of the damper
+    spring_rate_front::Float64 = -1                                                  #N/m, spring rate at the damper
+    spring_rate_rear::Float64 = -1                                                    #N/m, spring rate at the damper
+    bar_spring_rate_front::Float64 = -1                                               #N/m, Spring rate of front roll bar
+    bar_spring_rate_rear::Float64 = -1                                                #N/m, Spring rate of rear roll bar
+    motion_ratio_front::Float64 = -1                                                  #unitless, Damper / wheel (assumes we use coil-overs)
+    motion_ratio_rear::Float64 = -1                                                   #unitless, Damper / wheel (assumes we use coil-overs)
+    bar_motion_ratio_front::Float64 = -1                                              #unitless, Roll bar / wheel (assumes we use coil-overs)
+    bar_motion_ratio_rear::Float64 = -1                                              #unitless, Roll bar / wheel (assumes we use coil-overs)
+    ride_frequency_front::Float64 = -1                                                #Hz, target front ride frequency (compare to calculated)
+    ride_frequency_rear::Float64 = -1                                                 #Hz, target rear ride frequency (compare to calculated)
+
+    #Compliance
+    toe_deflection_rear::Float64 = -1                                                 #deg per 1kN, per wheel, linear toe deflection from Fy forces, from experimental testing
+
+    #Brakes
+    piston_radius_front::Float64 = -1                                                 #m
+    piston_radius_rear::Float64 = -1                                                  #m
+    num_pistons_front::Float64 = -1                                                   #unitless
+    num_pistons_rear::Float64 = -1                                                    #unitless
+    pad_friction_front::Float64 = -1                                                  #unitless, dynamic and static friction are assumed to be the same
+    pad_friction_rear::Float64 = -1                                                   #unitless, dynamic and static friction are assumed to be the same
+    max_pedal_force::Float64 = -1                                                     #N
+    disc_radius_front::Float64 = -1                                                   #m
+    disc_radius_rear::Float64 = -1                                                    #m
+    pad_height_front::Float64 = -1                                                    #m
+    pad_height_rear::Float64 = -1                                                     #m
+    mc_diameter_front::Float64 = -1                                                   #m
+    mc_diameter_rear::Float64 = -1                                                    #m
+    balance_bar_ratio_front::Float64 = -1                                             #0 to 1
+    brake_pedal_motion_ratio::Float64 = -1                                            #unitlessg
+
+
 end
 
 # Mutable struct for modifiable parameters
 Base.@kwdef mutable struct carParameters
-    #Dimensions
+        #Dimensions
         wheelbase::Float64                                                           #m
         track_width_front::Float64                                                   #m
         track_width_rear::Float64                                                    #m
@@ -137,12 +147,12 @@ Base.@kwdef mutable struct carParameters
         roll_center_rear::Float64                                                    #m, height of rear roll center at static ride height
         
         # Gearbox inertias 
-        j_m::Float64
-        J_s1::Float64
-        J_1::Float64
-        J_2::Float64
-        J_s2::Float64
-        J_w::Float64
+        Jm::Float64
+        Js1::Float64
+        J1::Float64
+        J2::Float64
+        Js2::Float64
+        Jw::Float64
 
 
         #Aerodyamics
@@ -185,7 +195,7 @@ Base.@kwdef mutable struct carParameters
         disc_radius_rear::Float64                                                    #m
         pad_height_front::Float64                                                    #m
         pad_height_rear::Float64                                                     #m
-        mc_diameter_front::Float64                                                  #m
+        mc_diameter_front::Float64                                                   #m
         mc_diameter_rear::Float64                                                    #m
         balance_bar_ratio_front::Float64                                             #0 to 1
         brake_pedal_motion_ratio::Float64                                            #unitlessg
@@ -271,14 +281,18 @@ function create_car(spreadsheetPath::String)
                         infer_eltypes = false)|> DataFrame
 
     # convert types in df to match struct
-    df.parameter = string.(df.parameter)
-    df.parameter = Symbol.(df.parameter)
+    df.parameter = Symbol.(string.(df.parameter))
     df.value = Float64.(df.value)
+
+    # filter out anything that might have been added, and not yet in this code
+    usedParameters = get_used_parameters()
+    df = filter(row -> row.parameter in usedParameters, df)
 
     # convert to dict then named tuple because ????      weird...
     parameterTuple = Dict(df.parameter .=> df.value)
     parameterTuple = (; parameterTuple...)
 
+    # create initial parameter struct with ^ that stuff
     original = InitialCarParameters(; parameterTuple...)  # Spread NamedTuple values
     println("Initial Parameters Read from Spreadsheet")
     # Creates car struct, calculated parameters are unnassigned and have default value of -1 
@@ -353,6 +367,10 @@ end
 # Function to reset parameters to the original values
 function reset_parameters(car::carParameters)
 
+    for name in fieldnames(typeof(car.original))
+        setfield!(car, name, getfield(car.original, name))
+    end
+#=
     car.wheelbase=car.original.wheelbase
     car.track_width_front=car.original.track_width_front
     car.track_width_rear=car.original.track_width_rear
@@ -374,12 +392,12 @@ function reset_parameters(car::carParameters)
     car.tire_width=car.original.tire_width
 
     car.gear_ratio=car.original.gear_ratio
-    car.j_m=car.original.j_m
-    car.J_s1=car.original.J_s1
-    car.J_1=car.original.J_1
-    car.J_2=car.original.J_2
-    car.J_s2=car.original.J_s2
-    car.J_w=car.original.J_w
+    car.Jm=car.original.Jm
+    car.Js1=car.original.Js1
+    car.J1=car.original.J1
+    car.J2=car.original.J2
+    car.Js2=car.original.Js2
+    car.Jw=car.original.Jw
 
     car.static_toe_front=car.original.static_toe_front
     car.static_toe_rear=car.original.static_toe_rear
@@ -435,6 +453,7 @@ function reset_parameters(car::carParameters)
     car.mc_diameter_rear=car.original.mc_diameter_rear
     car.balance_bar_ratio_front=car.original.balance_bar_ratio_front
     car.brake_pedal_motion_ratio=car.original.brake_pedal_motion_ratio
+    =#
 
     println("Parameters Reset to original values")
     update_parameters(car)    
@@ -482,6 +501,14 @@ function calculate_downforce(car::carParameters, velocity::Float64)
     return 0.5 * car.air_density * velocity^2 * car.Cl * car.frontal_area;
 end
 
+function get_used_parameters()
+    # this jawn returns a vector of symbols from the initial car parameters struct
+    # used to filter only the working, used parameters in this combined
+    # from the spreadsheet. 
 
+    dummy = InitialCarParameters()  # Create a default instance
+    return collect(propertynames(dummy))
+
+end
 
 end  # End of module
