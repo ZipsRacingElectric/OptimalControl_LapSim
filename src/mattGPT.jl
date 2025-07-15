@@ -170,7 +170,8 @@ end)
        
        # AS EXPRESSIONS
            # Forces and Yaw Moment on car
-           F_car = @expression(model, rotate_z(ψ)*(Fₜ[:,1]+Fₜ[:,2]+Fₜ[:,3]+Fₜ[:,4] ))
+           F_car = @expression(model, rotate_z(ψ)*(Fₜ[:,1]+Fₜ[:,2]+Fₜ[:,3]+Fₜ[:,4] + [0,0,m*g + F_aero(ClA, V)]))
+            # for now, add back in just weight and downforce, no load from banking or dips, etc.
            #M_car = @expression(model, crossProductMatrix(rᵢ[:,1])*Fₜ[:,1]+
            #                            crossProductMatrix(rᵢ[:,2])*Fₜ[:,2]+
            #                            crossProductMatrix(rᵢ[:,3])*Fₜ[:,3]+
@@ -181,19 +182,19 @@ end)
             # also will need a basis for normal force, don't want to un-generalize it and say it's always
             # in the binormal direction. This would make it more sine-cosiney, should probably look more
             # into rotations
-    #@constraint(model, m*(∂(v[1], t) - κ*v[1]v[2]               ) == tf * (F_car[1])) # T
+    @constraint(model, m*(∂(v[1], t) - κ*v[1]v[2]               ) == tf * (F_car[1])) # T
     #@constraint(model, m*(κ*v[1]^2   + ∂(v[2], t)  - τ*v[1]*v[3]) == tf * (F_car[2])) # N
-    #@constraint(model, m*(             τ*v[1]*v[2] + ∂(v[3], t) ) == tf * (F_car[3])) # B
+    @constraint(model, m*(             τ*v[1]*v[2] + ∂(v[3], t) ) == tf * (F_car[3])) # B
 
     # For now, much simplified yaw control 
     #@constraint(model, Iₚₒₒ*[0;0;∂(ω, t)] .== tf * M_car)
 
     # Tire Forces        
         # Normal Forces/Weight Transfers: static + aero + lateral + longitudinal load transfer
-        @constraint(model, Fₜ[3,1] == -cgDist*m*g/2     - 0*F_aero(ClA, V)/4 + a[1]*longLT/(2g) + 0*∂(v[2],t)*lltd_f/g)
-        @constraint(model, Fₜ[3,2] == -cgDist*m*g/2     - 0*F_aero(ClA, V)/4 + a[1]*longLT/(2g) - 0*∂(v[2],t)*lltd_f/g)
-        @constraint(model, Fₜ[3,3] == -(1-cgDist)*m*g/2 - 0*F_aero(ClA, V)/4 - a[1]*longLT/(2g) + 0*∂(v[2],t)*lltd_r/g)
-        @constraint(model, Fₜ[3,4] == -(1-cgDist)*m*g/2 - 0*F_aero(ClA, V)/4 - a[1]*longLT/(2g) - 0*∂(v[2],t)*lltd_r/g)
+        @constraint(model, Fₜ[3,1] == -cgDist*m*g/2     - 1*F_aero(ClA, V)/4 + a[1]*longLT/(2g))# + 0*∂(v[2],t)*lltd_f/g)
+        @constraint(model, Fₜ[3,2] == -cgDist*m*g/2     - 1*F_aero(ClA, V)/4 + a[1]*longLT/(2g))# - 0*∂(v[2],t)*lltd_f/g)
+        @constraint(model, Fₜ[3,3] == -(1-cgDist)*m*g/2 - 1*F_aero(ClA, V)/4 - a[1]*longLT/(2g))# + 0*∂(v[2],t)*lltd_r/g)
+        @constraint(model, Fₜ[3,4] == -(1-cgDist)*m*g/2 - 1*F_aero(ClA, V)/4 - a[1]*longLT/(2g))# - 0*∂(v[2],t)*lltd_r/g)
         
         # Long/Lat forces:
         # apply control vectors to tires in tire coord. frames, translate to car frame
