@@ -50,6 +50,37 @@ function inject_car_parameters!(model::InfiniteModel, car::carParameters)
     return (; m, l, cg_a, cg_b, tw_f, tw_r, cg_z,cgDist, CdA, ClA, r_wheel, torque_drive_max, torque_brake_max_f, torque_brake_max_r, μ, g, ρ, I₁₁, I₂₂, I₃₃)
 end
 
+# Rotation matrix jawns- might be easier in axis angle formulation??
+    function rotate_z(θₖ) 
+        [cos(θₖ) -sin(θₖ) 0; 
+         sin(θₖ) cos(θₖ) 0; 
+         0 0 1]
+    end
+    function rotate_y(θⱼ) 
+        [cos(θⱼ) 0 sin(θⱼ);
+         0 1 0; 
+        -sin(θⱼ) 0 cos(θⱼ)]
+    end
+    function rotate_x(θᵢ)
+        [1 0 0;
+         0 cos(θᵢ) -sin(θᵢ);
+         0 sin(θᵢ) cos(θᵢ)]
+    end
+     
+    function rotate(θᵢ,θⱼ,θₖ)
+        rotate_z(θₖ) * rotate_y(θⱼ) * rotate_x(θᵢ)
+    end
+
+    function rotate_z_2d(θₖ)
+        [cos(θₖ) -sin(θₖ); sin(θₖ) cos(θₖ)]
+    end
+    # defines skew symmetric cross product matrix thingyjawn for vector pp
+    function crossProductMatrix(p) 
+        [0 -p[3] p[2];
+         p[3] 0 -p[1];
+        -p[2] p[1] 0]
+    end
+    
 
 function getParameterNames(m::InfiniteModel)
     if has_values(m)
@@ -189,3 +220,45 @@ function plotTireForces(runData)
 
     return plotJawn 
 end
+
+function plotYawResponse(runData)
+
+    # 🧭 1. Steering Input & Wheel Angles
+    plot(runData.t, runData.u[2,:];
+        label = ["u₂ (Steering Input)"],
+        ylabel = "Steering ([-1,1])",
+        title = "Steering Input & Front Wheel Angles",
+        linewidth = 3,
+        legend = :bottomright
+    )
+
+    p1 = plot!(twinx(), runData.t,  [180/π*runData.δ[1,:], 180/π*runData.δ[2,:]];
+        label = ["α_FL" "α_FR"],
+        ylabel = "Slip Angle (rad)",
+        linewidth = 1.5,
+        legend = :topright)
+
+    # 🛞 2. Slip Angles
+    p2 = plot(runData.t, 180/π*runData.α;
+        label = ["α_FL" "α_FR" "α_RL" "α_RR"],
+        ylabel = "Slip Angle (rad)",
+        title = "Slip Angles on All Tires",
+        legend = :bottomright
+    )
+
+    # 🌀 3. Yaw Dynamics
+
+    p3 = plot(runData.t, [runData.ω];
+        label = ["ω (Yaw Rate)"],
+        ylabel = "Angular Rate (rad/s)",
+        xlabel = "Time (s)",
+        title = "Yaw & Heading Rate",
+        legend = :bottomright
+    )
+
+    fullPlot = plot(p1, p2, p3; layout = (3,1), size = (1400, 1000))
+    display(fullPlot)
+
+    return fullPlot
+end
+

@@ -1,3 +1,6 @@
 {
-    "julia.environmentPath": "c:\\Users\\benmo\\Documents\\GitHub\\OptimalControl_LapSim"
+    "julia.environmentPath": "c:\\Users\\benmo\\Documents\\GitHub\\OptimalControl_LapSim",
+    "workbench.editor.autoLockGroups": {
+        "repl": true
+    }
 }
